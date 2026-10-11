@@ -128,7 +128,11 @@ WAIT_FOR_SETUP_SECONDS: Final = 60.0
 class EcoMAX(PhysicalDevice):
     """Represents an ecoMAX controller."""
 
-    __slots__ = ("_fuel_meter",)
+    __slots__ = (
+        "_fuel_meter",
+        "_thermostat_parameters_requested",
+        "_ecoster_schedules_requested",
+    )
 
     _fuel_meter: FuelMeter
 
@@ -138,6 +142,38 @@ class EcoMAX(PhysicalDevice):
         """Initialize a new ecoMAX controller."""
         super().__init__(write_queue, network_info)
         self._fuel_meter = FuelMeter()
+        self._thermostat_parameters_requested = False
+        self._ecoster_schedules_requested = False
+
+    async def request_ecoster_schedules(
+        self, retries: int = 1, timeout: float = 3.0
+    ) -> Any:
+        """Request thermostat schedules from the connected ecoSTER device."""
+        initial_retries = retries
+        while retries > 0:
+            event = self.create_event(ATTR_SCHEDULES)
+            event.clear()
+            request = await Request.create(
+                FrameType.REQUEST_ECOSTER_SCHEDULES, recipient=DeviceType.ECOSTER
+            )
+            self.queue_send(request)
+            try:
+                await asyncio.wait_for(event.wait(), timeout=timeout)
+                schedules = self.get_nowait(ATTR_SCHEDULES, {})
+                if any(
+                    name in schedules
+                    for name in ("thermostat_1", "thermostat_2", "thermostat_3")
+                ):
+                    return schedules
+            except TimeoutError:
+                pass
+            retries -= 1
+
+        raise RequestError(
+            "Failed to request ecoSTER schedules after "
+            f"{initial_retries} retries.",
+            frame_type=FrameType.REQUEST_ECOSTER_SCHEDULES,
+        )
 
     def handle_frame(self, frame: Frame) -> None:
         """Handle frame received from the ecoMAX device."""
@@ -243,8 +279,10 @@ class EcoMAX(PhysicalDevice):
             result.frame_type for result in results if isinstance(result, RequestError)
         ]
 
-        if errors:
-            self.dispatch_nowait(ATTR_FRAME_ERRORS, errors)
+        # Refresh the frame error state on every successful setup. A frame
+        # that failed during a previous setup may recover later; keeping the
+        # old error would make supports_frame_type() skip it indefinitely.
+        self.dispatch_nowait(ATTR_FRAME_ERRORS, errors)
 
         _LOGGER.debug("Device entry setup done")
         return True
@@ -273,7 +311,7 @@ class EcoMAX(PhysicalDevice):
                         values,
                         product_info.model,
                     )
-                    return
+                    continue
 
                 handler = (
                     EcomaxSwitch
@@ -338,7 +376,13 @@ class EcoMAX(PhysicalDevice):
         def _schedule_parameter_events() -> Generator[Coroutine[Any, Any, None]]:
             """Get dispatch calls for schedule parameter events."""
             for index, values in parameters:
-                description = SCHEDULE_PARAMETERS[index]
+                try:
+                    description = SCHEDULE_PARAMETERS[index]
+                except (IndexError, KeyError):
+                    _LOGGER.warning(
+                        "Encountered unknown schedule parameter (%i): %s", index, values
+                    )
+                    continue
                 handler = (
                     ScheduleSwitch
                     if isinstance(description, ScheduleSwitchDescription)
@@ -394,6 +438,31 @@ class EcoMAX(PhysicalDevice):
 
         return None
 
+    async def _request_thermostat_parameters(self) -> None:
+        """Request thermostat parameters after thermostat sensors are detected."""
+        if self._thermostat_parameters_requested or ATTR_THERMOSTAT_PARAMETERS in self.data:
+            return
+
+        self._thermostat_parameters_requested = True
+        try:
+            await self.request(
+                ATTR_THERMOSTAT_PARAMETERS,
+                FrameType.REQUEST_THERMOSTAT_PARAMETERS,
+                retries=3,
+                timeout=3.0,
+            )
+        except (RequestError, TimeoutError) as err:
+            self._thermostat_parameters_requested = False
+            _LOGGER.debug("Thermostat parameters request failed: %s", err)
+
+    async def _request_ecoster_schedules(self) -> None:
+        """Request ecoSTER thermostat schedules after a thermostat is detected."""
+        try:
+            await self.request_ecoster_schedules(retries=1, timeout=3.0)
+        except (RequestError, TimeoutError) as err:
+            self._ecoster_schedules_requested = False
+            _LOGGER.debug("ecoSTER schedules request failed: %s", err)
+
     @event_listener
     async def on_event_thermostat_sensors(self, sensors: dict[int, Any] | None) -> bool:
         """Update thermostat sensors and dispatch the events."""
@@ -408,30 +477,46 @@ class EcoMAX(PhysicalDevice):
                 ),
                 return_exceptions=True,
             )
+            if ATTR_THERMOSTAT_PARAMETERS not in self.data:
+                self.create_task(
+                    self._request_thermostat_parameters(),
+                    name="request_thermostat_parameters",
+                )
+            if not self._ecoster_schedules_requested:
+                self._ecoster_schedules_requested = True
+                self.create_task(
+                    self._request_ecoster_schedules(),
+                    name="request_ecoster_schedules",
+                )
             return True
 
         return False
 
     @event_listener
     async def on_event_schedules(
-        self, schedules: list[tuple[int, list[list[bool]]]]
+        self, schedules_data: list[tuple[int, list[list[bool]]]]
     ) -> dict[str, Schedule]:
-        """Update schedules."""
+        """Update schedules while preserving schedules from other controllers."""
         _LOGGER.debug("Received device schedules")
-        return {
-            SCHEDULES[index]: Schedule(
-                name=SCHEDULES[index],
-                device=self,
-                monday=ScheduleDay.from_iterable(schedule[1]),
-                tuesday=ScheduleDay.from_iterable(schedule[2]),
-                wednesday=ScheduleDay.from_iterable(schedule[3]),
-                thursday=ScheduleDay.from_iterable(schedule[4]),
-                friday=ScheduleDay.from_iterable(schedule[5]),
-                saturday=ScheduleDay.from_iterable(schedule[6]),
-                sunday=ScheduleDay.from_iterable(schedule[0]),
-            )
-            for index, schedule in schedules
-        }
+        schedules = self.data.get(ATTR_SCHEDULES, {}).copy()
+        schedules.update(
+            {
+                SCHEDULES[index]: Schedule(
+                    name=SCHEDULES[index],
+                    device=self,
+                    monday=ScheduleDay.from_iterable(schedule[1]),
+                    tuesday=ScheduleDay.from_iterable(schedule[2]),
+                    wednesday=ScheduleDay.from_iterable(schedule[3]),
+                    thursday=ScheduleDay.from_iterable(schedule[4]),
+                    friday=ScheduleDay.from_iterable(schedule[5]),
+                    saturday=ScheduleDay.from_iterable(schedule[6]),
+                    sunday=ScheduleDay.from_iterable(schedule[0]),
+                )
+                for index, schedule in schedules_data
+            }
+        )
+        return schedules
+
 
     @event_listener(filter=on_change)
     async def on_event_state(self, state: DeviceState) -> None:

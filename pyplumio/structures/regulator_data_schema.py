@@ -23,7 +23,11 @@ class RegulatorDataSchemaStructure(StructureDecoder):
         param_type = message[self._offset]
         param_id = UnsignedShort.from_bytes(message, self._offset + 1)
         self._offset += param_id.size + 1
-        return param_id.value, DATA_TYPES[param_type]()
+        try:
+            data_type = DATA_TYPES[param_type]
+        except IndexError as err:
+            raise ValueError(f"Unknown regulator data type: {param_type}") from err
+        return param_id.value, data_type()
 
     def decode(
         self, message: bytearray, offset: int = 0, data: dict[str, Any] | None = None

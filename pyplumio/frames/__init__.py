@@ -9,7 +9,7 @@ import struct
 from typing import TYPE_CHECKING, Any, ClassVar, Final, TypeVar
 
 from pyplumio.const import DeviceType, FrameType
-from pyplumio.exceptions import UnknownFrameError
+from pyplumio.exceptions import FrameDataError, UnknownFrameError
 from pyplumio.utils import create_instance, ensure_dict, to_camelcase
 
 if TYPE_CHECKING:
@@ -345,8 +345,11 @@ class Response(Frame):
         """Decode frame message."""
         data: dict[str, Any] = {}
         offset = 0
-        for structure in self._structures:
-            data, offset = structure.decode(message, offset, data)
+        try:
+            for structure in self._structures:
+                data, offset = structure.decode(message, offset, data)
+        except (IndexError, UnicodeError, ValueError, struct.error) as err:
+            raise FrameDataError("Invalid frame data") from err
 
         if hasattr(self, "container"):
             return {self.container: data}

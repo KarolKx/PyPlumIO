@@ -26,7 +26,12 @@ def unpack_parameter(
     data: bytearray, offset: int = 0, size: int = 1
 ) -> ParameterValues | None:
     """Unpack a device parameter."""
-    if not is_valid_parameter(data[offset : offset + size * 3]):
+    parameter_size = size * 3
+    if offset < 0 or size <= 0 or len(data) - offset < parameter_size:
+        return None
+
+    parameter_data = data[offset : offset + parameter_size]
+    if not is_valid_parameter(parameter_data):
         return None
 
     value = data[offset : offset + size]

@@ -153,9 +153,17 @@ class PhysicalDevice(Device, ABC):
         """Check frame versions and update outdated frames."""
         _LOGGER.debug("Received frame version table")
         for frame_type, version in versions.items():
+            if not is_known_frame_type(frame_type):
+                _LOGGER.debug(
+                    "Controller advertises unsupported frame type %s (0x%02X), version %s",
+                    frame_type,
+                    frame_type,
+                    version,
+                )
+                continue
+
             if (
-                is_known_frame_type(frame_type)
-                and self.supports_frame_type(frame_type)
+                self.supports_frame_type(frame_type)
                 and not self.has_frame_version(frame_type, version)
             ):
                 request_frame_type = (

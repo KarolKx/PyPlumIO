@@ -11,7 +11,7 @@ from datetime import datetime
 import logging
 from typing import Any, Final, Literal, TypeAlias
 
-from pyplumio.const import ATTR_CONNECTED, ATTR_SETUP, DeviceType
+from pyplumio.const import ATTR_CONNECTED, ATTR_SETUP, DeviceType, FrameType
 from pyplumio.devices import PhysicalDevice
 from pyplumio.exceptions import ProtocolError
 from pyplumio.frames import Frame
@@ -292,6 +292,17 @@ class AsyncProtocol(Protocol, EventManager[PhysicalDevice]):
                     self.statistics.update_received(frame)
                     device = await self._get_device_entry(frame.sender)
                     device.handle_frame(frame)
+                    if (
+                        frame.sender == DeviceType.ECOSTER
+                        and frame.frame_type
+                        in (
+                            FrameType.RESPONSE_ECOSTER_SCHEDULES,
+                            FrameType.RESPONSE_SET_ECOSTER_SCHEDULE,
+                        )
+                        and (ecomax := self.data.get("ecomax")) is not None
+                        and ecomax is not device
+                    ):
+                        ecomax.handle_frame(frame)
 
             except ProtocolError as e:
                 self.statistics.failed_frames += 1

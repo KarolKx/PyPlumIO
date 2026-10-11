@@ -15,6 +15,7 @@ from pyplumio.const import (
     ATTR_TYPE,
     STATE_OFF,
     STATE_ON,
+    DeviceType,
     FrameType,
     State,
 )
@@ -100,9 +101,14 @@ class ScheduleParameter(Parameter):
     async def create_request(self) -> Request:
         """Create a request to change the parameter."""
         schedule_name = self.description.name.split("_schedule_", 1)[0]
+        is_ecoster = schedule_name.startswith("thermostat_")
         return await Request.create(
-            FrameType.REQUEST_SET_SCHEDULE,
-            recipient=self.device.address,
+            (
+                FrameType.REQUEST_SET_ECOSTER_SCHEDULE
+                if is_ecoster
+                else FrameType.REQUEST_SET_SCHEDULE
+            ),
+            recipient=DeviceType.ECOSTER if is_ecoster else self.device.address,
             data=collect_schedule_data(schedule_name, self.device),
         )
 
@@ -295,10 +301,15 @@ class Schedule(Iterable):
 
     async def commit(self) -> None:
         """Commit a weekly schedule to the device."""
+        is_ecoster = self.name.startswith("thermostat_")
         self.device.queue_send(
             await Request.create(
-                FrameType.REQUEST_SET_SCHEDULE,
-                recipient=self.device.address,
+                (
+                    FrameType.REQUEST_SET_ECOSTER_SCHEDULE
+                    if is_ecoster
+                    else FrameType.REQUEST_SET_SCHEDULE
+                ),
+                recipient=DeviceType.ECOSTER if is_ecoster else self.device.address,
                 data=collect_schedule_data(self.name, self.device),
             )
         )

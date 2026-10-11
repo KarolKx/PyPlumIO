@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from typing import Any, Final, TypeAlias
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 from pyplumio.parameters import ParameterValues, unpack_parameter
 from pyplumio.parameters.thermostat import get_thermostat_parameter_types
@@ -78,10 +81,3 @@ class ThermostatParametersStructure(StructureDecoder):
             ),
             self._offset,
         )
-
-
-__all__ = [
-    "ATTR_THERMOSTAT_PROFILE",
-    "ATTR_THERMOSTAT_PARAMETERS",
-    "ThermostatParametersStructure",
-]

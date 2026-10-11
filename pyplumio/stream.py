@@ -9,7 +9,7 @@ from typing import Final, NamedTuple, SupportsIndex
 
 from pyplumio.const import DeviceType
 from pyplumio.devices import is_known_device_type
-from pyplumio.exceptions import ChecksumError, ReadError, UnknownDeviceError
+from pyplumio.exceptions import ChecksumError, ReadError, UnknownFrameError
 from pyplumio.frames import (
     BCC_INDEX,
     DELIMITER_SIZE,
@@ -219,18 +219,32 @@ class FrameReader:
             return None
 
         if not is_known_device_type(sender):
-            raise UnknownDeviceError(f"Unknown sender type ({sender})")
+            _LOGGER.debug(
+                "Ignoring frame from unsupported sender (%s): %s",
+                sender,
+                frame_bytes.hex(),
+            )
+            return None
 
         payload_bytes = frame_bytes[HEADER_SIZE:BCC_INDEX]
-        frame = await Frame.create(
-            frame_type=payload_bytes[0],
-            recipient=DeviceType(recipient),
-            sender=DeviceType(sender),
-            econet_type=econet_type,
-            econet_version=econet_version,
-            message=payload_bytes[FRAME_TYPE_SIZE:],
-        )
-        _LOGGER.debug("Received frame: %s, bytes: %s", frame, frame_bytes.hex())
+        try:
+            frame = await Frame.create(
+                frame_type=payload_bytes[0],
+                recipient=DeviceType(recipient),
+                sender=DeviceType(sender),
+                econet_type=econet_type,
+                econet_version=econet_version,
+                message=payload_bytes[FRAME_TYPE_SIZE:],
+            )
+        except UnknownFrameError:
+            _LOGGER.debug(
+                "Ignoring unsupported frame type (%s) from sender (%s): %s",
+                payload_bytes[0],
+                sender,
+                frame_bytes.hex(),
+            )
+            return None
+        _LOGGER.debug("Received frame: %s, bytes: %s", type(frame).__name__, frame_bytes.hex())
 
         return frame
 

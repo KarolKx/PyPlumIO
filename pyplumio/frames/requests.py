@@ -130,6 +130,14 @@ class SchedulesRequest(Request):
     __slots__ = ()
 
 
+@frame_handler(FrameType.REQUEST_ECOSTER_SCHEDULES)
+@expect_response(responses.EcosterSchedulesResponse)
+class EcosterSchedulesRequest(Request):
+    """Represents an ecoSTER schedules request."""
+
+    __slots__ = ()
+
+
 @frame_handler(FrameType.REQUEST_SET_ECOMAX_PARAMETER)
 @expect_response(responses.SetEcomaxParameterResponse)
 class SetEcomaxParameterRequest(Request):
@@ -168,6 +176,46 @@ class SetMixerParameterRequest(Request):
             raise FrameDataError from e
 
 
+@frame_handler(FrameType.REQUEST_SET_ECOSTER_SCHEDULE)
+@expect_response(responses.SetEcosterScheduleResponse)
+class SetEcosterScheduleRequest(Request):
+    """Represents a request to set an ecoSTER schedule."""
+
+    __slots__ = ()
+
+    def create_message(self, data: dict[str, Any]) -> bytearray:
+        """Create a frame message."""
+        message = b"\1"
+        try:
+            schedule_type = SCHEDULES.index(data[ATTR_TYPE])
+            message += schedule_type.to_bytes(length=1, byteorder="little")
+            message += int(data[ATTR_SWITCH]).to_bytes(length=1, byteorder="little")
+            message += int(data[ATTR_PARAMETER]).to_bytes(length=1, byteorder="little")
+            schedule = cast(list[list[bool]], data[ATTR_SCHEDULE])
+        except (KeyError, ValueError) as e:
+            raise FrameDataError from e
+
+        # ScheduleDay is a mapping keyed by HH:MM strings, not a list.
+        # The encoder needs the 48 boolean half-hour states for each day.
+        encoded_schedule = bytearray()
+        for day in schedule:
+            if hasattr(day, "schedule"):
+                bits = list(day.schedule.values())
+            else:
+                bits = list(day)
+
+            if len(bits) != 48:
+                raise FrameDataError(
+                    f"Expected 48 schedule intervals, got {len(bits)}"
+                )
+
+            encoded_schedule.extend(
+                join_bits(bits[i : i + 8]) for i in range(0, 48, 8)
+            )
+
+        return bytearray(message) + encoded_schedule
+
+
 @frame_handler(FrameType.REQUEST_SET_SCHEDULE)
 class SetScheduleRequest(Request):
     """Represents a request to set a schedule."""
@@ -186,9 +234,27 @@ class SetScheduleRequest(Request):
         except (KeyError, ValueError) as e:
             raise FrameDataError from e
 
-        return bytearray(message) + bytearray(
-            join_bits(day[i : i + 8]) for day in schedule for i in range(0, len(day), 8)
-        )
+        # ScheduleDay is a mapping keyed by HH:MM strings.
+        # Convert its 48 boolean values to the byte-oriented protocol format.
+        encoded_schedule = bytearray()
+
+        for day in schedule:
+            if hasattr(day, "schedule"):
+                bits = list(day.schedule.values())
+            else:
+                bits = list(day)
+
+            if len(bits) != 48:
+                raise FrameDataError(
+                    f"Expected 48 schedule intervals, got {len(bits)}"
+                )
+
+            encoded_schedule.extend(
+                join_bits(bits[i : i + 8])
+                for i in range(0, 48, 8)
+            )
+
+        return bytearray(message) + encoded_schedule
 
 
 @frame_handler(FrameType.REQUEST_SET_THERMOSTAT_PARAMETER)

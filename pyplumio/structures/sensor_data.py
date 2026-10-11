@@ -413,7 +413,7 @@ class SensorDataStructure(StructureDecoder):
         data = self._decode_lambda_sensor(message, data)
         data = self._decode_thermostat_sensors(message, data)
         data = self._decode_mixer_sensors(message, data)
-        return data, offset
+        return data, self._offset
 
 
 __all__ = [

@@ -57,6 +57,15 @@ class EcomaxParametersResponse(Response):
     __slots__ = ()
 
 
+@frame_handler(
+    FrameType.RESPONSE_ECOMAX_PARAMETER_CHANGES, structure=EcomaxParametersStructure
+)
+class EcomaxParameterChangesResponse(Response):
+    """Represents an ecoMAX parameter changes response."""
+
+    __slots__ = ()
+
+
 @frame_handler(FrameType.RESPONSE_MIXER_PARAMETERS, structure=MixerParametersStructure)
 class MixerParametersResponse(Response):
     """Represents a mixer parameters response.
@@ -108,6 +117,20 @@ class RegulatorDataSchemaResponse(Response):
 @frame_handler(FrameType.RESPONSE_SCHEDULES, structure=SchedulesStructure)
 class SchedulesResponse(Response):
     """Represents response to a device schedules request."""
+
+    __slots__ = ()
+
+
+@frame_handler(FrameType.RESPONSE_ECOSTER_SCHEDULES, structure=SchedulesStructure)
+class EcosterSchedulesResponse(Response):
+    """Represents response to an ecoSTER schedules request."""
+
+    __slots__ = ()
+
+
+@frame_handler(FrameType.RESPONSE_SET_ECOSTER_SCHEDULE, structure=SchedulesStructure)
+class SetEcosterScheduleResponse(Response):
+    """Represents acknowledgement/data response to an ecoSTER schedule write."""
 
     __slots__ = ()
 
@@ -172,6 +195,7 @@ __all__ = [
     "DeviceAvailableResponse",
     "EcomaxControlResponse",
     "EcomaxParametersResponse",
+    "EcomaxParameterChangesResponse",
     "MixerParametersResponse",
     "PasswordResponse",
     "ProgramVersionResponse",
