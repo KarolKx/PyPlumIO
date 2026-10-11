@@ -2,6 +2,7 @@
 
 [project]
 name = "PyPlumIO"
+version = "0.6.8"
 authors = [
     {name = "Denis Paavilainen", email = "denpa@denpa.pro"}
 ]
@@ -25,7 +26,6 @@ classifiers = [
 dependencies = [
     "pyserial-asyncio-fast==0.16"
 ]
-dynamic = ["version"]
 
 [project.urls]
 "Documentation" = "https://pyplumio.denpa.pro"
